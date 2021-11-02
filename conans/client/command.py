@@ -1573,6 +1573,8 @@ class Command(object):
         parser_add = subparsers.add_parser('add', help='Add a remote')
         parser_add.add_argument('remote', help='Name of the remote')
         parser_add.add_argument('url', help='URL of the remote')
+        parser_add.add_argument('type', nargs="?", choices=["conan_api", "azure_universal"], default="conan_api",
+                                help='TYPE of the remote. Default "conan_api"', metavar="type")
         parser_add.add_argument('verify_ssl', nargs="?", default="True",
                                 help='Verify SSL certificated. Default True')
         parser_add.add_argument("-i", "--insert", nargs="?", const=0, type=int, action=OnceArgument,
@@ -1584,7 +1586,9 @@ class Command(object):
         parser_upd = subparsers.add_parser('update', help='Update the remote url')
         parser_upd.add_argument('remote', help='Name of the remote')
 
-        parser_upd.add_argument('url', help='URL')
+        parser_upd.add_argument('url', help='URL of the remote')
+        parser_upd.add_argument('type', nargs="?", choices=["conan_api", "azure_universal"], default="conan_api",
+                                help='TYPE of the remote. Default "conan_api"', metavar="type")
         parser_upd.add_argument('verify_ssl', nargs="?", default="True",
                                 help='Verify SSL certificated. Default True')
         parser_upd.add_argument("-i", "--insert", nargs="?", const=0, type=int, action=OnceArgument,
@@ -1626,7 +1630,7 @@ class Command(object):
 
         update_pref = subparsers.add_parser('update_pref', help="Update the remote associated with "
                                             "a binary package")
-        update_pref.add_argument('package_reference', help='Bianary package reference')
+        update_pref.add_argument('package_reference', help='Binary package reference')
         update_pref.add_argument('remote', help='Name of the remote')
 
         subparsers.add_parser('clean', help="Clean the list of remotes and all "
@@ -1645,6 +1649,8 @@ class Command(object):
         verify_ssl = get_bool_from_text(args.verify_ssl) if hasattr(args, 'verify_ssl') else False
 
         remote_name = args.remote if hasattr(args, 'remote') else None
+        remote_type = args.type if hasattr(args, 'type') else None
+
         new_remote = args.new_remote if hasattr(args, 'new_remote') else None
         url = args.url if hasattr(args, 'url') else None
 
@@ -1652,13 +1658,13 @@ class Command(object):
             remotes = self._conan.remote_list()
             self._outputer.remote_list(remotes, args.raw)
         elif args.subcommand == "add":
-            return self._conan.remote_add(remote_name, url, verify_ssl, args.insert, args.force)
+            return self._conan.remote_add(remote_name, url, remote_type, verify_ssl, args.insert, args.force)
         elif args.subcommand == "remove":
             return self._conan.remote_remove(remote_name)
         elif args.subcommand == "rename":
             return self._conan.remote_rename(remote_name, new_remote)
         elif args.subcommand == "update":
-            return self._conan.remote_update(remote_name, url, verify_ssl, args.insert)
+            return self._conan.remote_update(remote_name, url, remote_type, verify_ssl, args.insert)
         elif args.subcommand == "list_ref":
             refs = self._conan.remote_list_ref(args.no_remote)
             self._outputer.remote_ref_list(refs)
