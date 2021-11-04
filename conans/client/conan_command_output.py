@@ -2,6 +2,7 @@ import json
 import os
 from collections import OrderedDict
 
+from conans.client.nuget import __nuget_remote_type__ as nuget_remote_type
 from conans.client.graph.graph import RECIPE_CONSUMER, RECIPE_VIRTUAL
 from conans.client.graph.graph import RECIPE_EDITABLE
 from conans.client.graph.grapher import Grapher
@@ -33,13 +34,13 @@ class CommandOutputer(object):
         for r in remotes:
             if raw:
                 disabled_str = " True" if r.disabled else ""
-                type_str = " AzureArtifacts" if not "conan_api" in r.type else ""
+                type_str = " NuGet" if nuget_remote_type in r.type else ""
                 self._output.info(
                     "%s %s%s %s%s" %
                     (r.name, r.url, type_str, r.verify_ssl, disabled_str))
             else:
                 disabled_str = ", Disabled: True" if r.disabled else ""
-                type_str = "Type: Azure Artifacts, " if not "conan_api" in r.type else ""
+                type_str = "Type: NuGet, " if nuget_remote_type in r.type else ""
                 self._output.info(
                     "%s: %s [%sVerify SSL: %s%s]" %
                     (r.name, r.url, type_str, r.verify_ssl, disabled_str))

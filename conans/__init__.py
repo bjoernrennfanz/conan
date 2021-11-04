@@ -21,3 +21,4 @@ SERVER_CAPABILITIES = [COMPLEX_SEARCH_CAPABILITY, REVISIONS]  # Server is always
 DEFAULT_REVISION_V1 = "0"
 
 __version__ = '1.44.0-dev'
+__default_remote_type__ = 'conan'

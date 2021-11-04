@@ -5,6 +5,8 @@ import stat
 from collections import OrderedDict, namedtuple
 from six.moves.urllib.parse import urlparse
 
+from conans import __default_remote_type__ as default_remote_type
+from conans.client.nuget import __nuget_remote_type__ as nuget_remote_type
 from conans.errors import ConanException, NoRemoteAvailable
 from conans.util.config_parser import get_bool_from_text_value
 from conans.util.files import load, save
@@ -41,7 +43,7 @@ def load_registry_txt(contents):
                 raise ConanException("Bad file format, wrong item numbers in line '%s'" % line)
 
             verify_ssl = get_bool_from_text_value(verify_ssl)
-            remotes.add(remote_name, url, "conan_api", verify_ssl)
+            remotes.add(remote_name, url, default_remote_type, verify_ssl)
         else:
             ref, remote_name = chunks
             refs[ref] = remote_name
@@ -112,7 +114,8 @@ class Remotes(object):
         result = Remotes()
         result._remotes[CONAN_CENTER_REMOTE_NAME] = Remote(CONAN_CENTER_REMOTE_NAME,
                                                            "https://center.conan.io",
-                                                           "conan_api", True, False)
+                                                           default_remote_type,
+                                                           True, False)
         return result
 
     def select(self, remote_name):
@@ -146,8 +149,9 @@ class Remotes(object):
         data = json.loads(text)
         for r in data.get("remotes", []):
             disabled = r.get("disabled", False)
+            remote_type = r.get("type", default_remote_type)
             result._remotes[r["name"]] = Remote(r["name"], r["url"],
-                                                r["type"], r["verify_ssl"],
+                                                remote_type, r["verify_ssl"],
                                                 disabled)
 
         return result
@@ -156,7 +160,7 @@ class Remotes(object):
         result = []
         for remote in self._remotes.values():
             disabled_str = ", Disabled: True" if remote.disabled else ""
-            type_str = "Type: Azure Artifacts, " if not "conan_api" in remote.type else ""
+            type_str = "Type: NuGet, " if nuget_remote_type in remote.type else ""
             result.append("%s: %s [%sVerify SSL: %s%s]" %
                           (remote.name, remote.url, type_str, remote.verify_ssl, disabled_str))
         return "\n".join(result)
