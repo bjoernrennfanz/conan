@@ -11,7 +11,7 @@ from six.moves import input as user_input
 
 from conans import __version__ as client_version
 from conans import __default_remote_type__ as default_remote_type
-from conans.client.nuget import __nuget_remote_type__ as nuget_remote_type
+from conans.client.npm import __npm_remote_type__ as npm_remote_type
 from conans.client.cmd.frogarian import cmd_frogarian
 from conans.client.cmd.uploader import UPLOAD_POLICY_FORCE, \
     UPLOAD_POLICY_NO_OVERWRITE, UPLOAD_POLICY_NO_OVERWRITE_RECIPE, UPLOAD_POLICY_SKIP
@@ -1575,8 +1575,9 @@ class Command(object):
         parser_add = subparsers.add_parser('add', help='Add a remote')
         parser_add.add_argument('remote', help='Name of the remote')
         parser_add.add_argument('url', help='URL of the remote')
-        parser_add.add_argument('type', nargs="?", choices=[default_remote_type, nuget_remote_type], default=default_remote_type,
-                                help='TYPE of the remote. Default conan api', metavar="type")
+        parser_add.add_argument('type', nargs="?", choices=[default_remote_type, npm_remote_type],
+                                default=default_remote_type, help='TYPE of the remote [conan, npm]'
+                                '. Default conan', metavar="type")
         parser_add.add_argument('verify_ssl', nargs="?", default="True",
                                 help='Verify SSL certificated. Default True')
         parser_add.add_argument("-i", "--insert", nargs="?", const=0, type=int, action=OnceArgument,
@@ -1589,7 +1590,7 @@ class Command(object):
         parser_upd.add_argument('remote', help='Name of the remote')
 
         parser_upd.add_argument('url', help='URL of the remote')
-        parser_upd.add_argument('type', nargs="?", choices=[default_remote_type, nuget_remote_type], default=default_remote_type,
+        parser_upd.add_argument('type', nargs="?", choices=[default_remote_type, npm_remote_type], default=default_remote_type,
                                 help='TYPE of the remote. Default conan api', metavar="type")
         parser_upd.add_argument('verify_ssl', nargs="?", default="True",
                                 help='Verify SSL certificated. Default True')

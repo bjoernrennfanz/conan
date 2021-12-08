@@ -39,8 +39,8 @@ from conans.client.manager import deps_install
 from conans.client.migrations import ClientMigrator
 from conans.client.output import ConanOutput, colorama_initialize
 from conans.client.profile_loader import profile_from_args, read_profile
-from conans.client.nuget import __nuget_remote_type__ as nuget_remote_type
-from conans.client.nuget.auth_manager import NuGetAuthManager
+from conans.client.npm import __npm_remote_type__ as npm_remote_type
+from conans.client.npm.auth_manager import NpmAuthManager
 from conans.client.recorder.action_recorder import ActionRecorder
 from conans.client.recorder.search_recorder import SearchRecorder
 from conans.client.recorder.upload_recoder import UploadRecorder
@@ -187,11 +187,11 @@ class ConanApp(object):
                                                    artifacts_properties=artifacts_properties)
         # Wraps RestApiClient to add authentication support (same interface)
         auth_manager = ConanApiAuthManager(rest_client_factory, self.user_io, self.cache.localdb)
-        nuget_auth_manager = NuGetAuthManager(self.user_io, self.cache.localdb)
+        npm_auth_manager = NpmAuthManager(self.user_io, self.cache.localdb)
 
         # Handle remote connections
         self.remote_manager = RemoteManager(self.cache, auth_manager, self.out, self.hook_manager)
-        self.remote_manager.register_auth_manager(nuget_auth_manager, nuget_remote_type)
+        self.remote_manager.register_auth_manager(npm_auth_manager, npm_remote_type)
 
         # Adjust global tool variables
         set_global_instances(self.out, self.requester, self.config)

@@ -53,7 +53,7 @@ class RemoteManager(object):
         self._hook_manager = hook_manager
 
     def register_auth_manager(self, auth_manager, remote_type):
-        self._auth_managers[remote_type] = auth_manager;
+        self._auth_managers[remote_type] = auth_manager
 
     def check_credentials(self, remote):
         self._call_remote(remote, "check_credentials")
