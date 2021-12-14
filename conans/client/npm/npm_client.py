@@ -1,28 +1,22 @@
-from conans.client.npm.azure_client_v1 import AzureV1Methods
+from conans.client.npm.npm_client_v1 import NpmClientV1Methods
 
 
-class AzureApiClientFactory(object):
-    """
-    Azure Api Client for handle remote.
-    """
+class NpmClientFactory(object):
 
     def __init__(self, output, config, artifacts_properties=None):
         self._output = output
         self._config = config
         self._artifacts_properties = artifacts_properties
+        self._cached_capabilities = {}
 
     def new(self, remote, local_db, api_version=1):
-        return AzureApiClient(
-            remote,
-            local_db,
-            self._output,
-            self._config,
-            api_version,
-            self._artifacts_properties
-        )
+        tmp = NpmClient(remote, local_db, self._output,
+                        self._config, api_version,
+                        self._artifacts_properties)
+        return tmp
 
 
-class AzureApiClient(object):
+class NpmClient(object):
     """
     Rest Api Client for handle remote.
     """
@@ -39,16 +33,15 @@ class AzureApiClient(object):
 
     def _get_api(self):
         if self._api_version == 1:
-            return AzureV1Methods(
+            return NpmClientV1Methods(
                 self._remote,
                 self._local_db,
                 self._output,
                 self._config,
-                self._api_version,
                 self._artifacts_properties
             )
         else:
-            raise RuntimeError("Api Version '{}' is not implemented, yet.")
+            raise RuntimeError("Api Version v{} is not implemented, yet.")
 
     def get_recipe_manifest(self, ref):
         return self._get_api().get_recipe_manifest(ref)

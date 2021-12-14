@@ -1,11 +1,16 @@
+import base64
+from itertools import cycle
+
 from azure.devops.connection import Connection
 from msrest.authentication import BasicAuthentication
-from conans.errors import AuthenticationException, ConanException, ForbiddenException
+
+from conans.client.cmd.user import update_localdb
+from conans.errors import AuthenticationException, ConanException
 
 
-class AzureV1Methods(object):
+class NpmClientV1Methods(object):
 
-    def __init__(self, remote, local_db, output, config, api_version, artifacts_properties=None):
+    def __init__(self, remote, local_db, output, config, artifacts_properties=None):
         # Set to instance
         self._local_db = local_db
         self._remote = remote
@@ -15,7 +20,6 @@ class AzureV1Methods(object):
         self._artifacts_properties = artifacts_properties
         self._revisions_enabled = config.revisions_enabled
         self._config = config
-        self._api_version = api_version
 
     def get_recipe_manifest(self, ref):
         raise RuntimeError('Not implemented, yet')
@@ -53,13 +57,16 @@ class AzureV1Methods(object):
     def upload_package(self, pref, files_to_upload, deleted, retry, retry_wait):
         raise RuntimeError('Not implemented, yet')
 
-    def authenticate(self, user, password=None):
-        remote_url = self._remote.url
-        remote_name = self._remote.name
-        # Load remote data from local db cache
-        db_user, db_token, db_refresh_token = self._local_db.get_login(remote_url)
-        previous_user = db_user
+    def authenticate(self, user, password):
+        if user is None:  # The user is already in DB, just need the password
+            prev_user = self._localdb.get_username(self._remote.url)
+            if prev_user is None:
+                raise ConanException("User for remote '%s' is not defined" % self._remote.name)
+            else:
+                user = prev_user
+
         # Extract data from given url
+        remote_url = self._remote.url
         remote_url_parts = remote_url.split('/')
         if len(remote_url_parts) < 6:
             ConanException("Cannot parse Organization or Package from given url")
@@ -67,24 +74,32 @@ class AzureV1Methods(object):
             ConanException("Cannot handle platform not equal to dev.azure.com")
         elif remote_url_parts[6] != 'npm':
             ConanException("Cannot handle packages with given type not equal to npm")
+
         organization = remote_url_parts[3]
         organization_url_len = remote_url.find(organization) + len(organization)
         organization_url = remote_url[:organization_url_len]
-        # If given password is None, try to connect with stored credentials form local database
-        pat = (password, db_token)[password is None]
+
         # Create a connection to the org
-        credentials = BasicAuthentication('', pat)
+        credentials = BasicAuthentication(user, password)
         connection = Connection(base_url=organization_url, creds=credentials)
+
         # Authenticate the connection
         try:
             connection.authenticate()
         except Exception as ex:
             raise AuthenticationException(ex)
-        # Store connection and credentials if they are new
-        self._connection = connection
-        if password is not None:
-            self._store_user_token_in_db(user, pat, None, self._remote)
-        return remote_name, previous_user, user
+
+        # Generate token
+        token_raw_bytes = password.encode()
+        token_bytes = base64.b64encode(token_raw_bytes)
+
+        # Store result in DB
+        remote_name, prev_user, user = update_localdb(self._local_db, user,
+                                                      token_bytes.decode(),
+                                                      self._sxor(user, password),
+                                                      self._remote)
+
+        return remote_name, prev_user, user
 
     def check_credentials(self):
         raise RuntimeError('Not implemented, yet')
@@ -116,17 +131,8 @@ class AzureV1Methods(object):
     def get_latest_package_revision(self, pref, headers):
         raise RuntimeError('Not implemented, yet')
 
-    def _store_user_token_in_db(self, user, token, refresh_token, remote):
-        try:
-            self._local_db.store(user, token, refresh_token, remote_url=remote.url)
-        except Exception as e:
-            self._output.error('Your credentials could not be stored in local cache\n')
-            self._output.debug(str(e) + '\n')
-
-    def _clear_user_tokens_in_db(self, user, remote):
-        try:
-            self._local_db.store(user, token=None, refresh_token=None, remote_url=remote.url)
-        except Exception as e:
-            self._output.error('Your credentials could not be stored in local cache\n')
-            self._output.debug(str(e) + '\n')
-
+    @staticmethod
+    def _sxor(s1, s2):
+        """ XOR two byte strings """
+        zip_list = zip(s1, cycle(s2)) if len(s1) > len(s2) else zip(cycle(s1), s2)
+        return ''.join(chr(ord(a) ^ ord(b)) for a, b in zip_list)
