@@ -41,6 +41,7 @@ from conans.client.output import ConanOutput, colorama_initialize
 from conans.client.profile_loader import profile_from_args, read_profile
 from conans.client.npm import __npm_remote_type__ as npm_remote_type
 from conans.client.npm.auth_manager import NpmAuthManager
+from conans.client.npm.azure_client import AzureApiClientFactory
 from conans.client.recorder.action_recorder import ActionRecorder
 from conans.client.recorder.search_recorder import SearchRecorder
 from conans.client.recorder.upload_recoder import UploadRecorder
@@ -185,9 +186,12 @@ class ConanApp(object):
         artifacts_properties = self.cache.read_artifacts_properties()
         rest_client_factory = RestApiClientFactory(self.out, self.requester, self.config,
                                                    artifacts_properties=artifacts_properties)
+
+        azure_client_factory = AzureApiClientFactory(self.out, self.config,
+                                                     artifacts_properties=artifacts_properties)
         # Wraps RestApiClient to add authentication support (same interface)
         auth_manager = ConanApiAuthManager(rest_client_factory, self.user_io, self.cache.localdb)
-        npm_auth_manager = NpmAuthManager(self.user_io, self.cache.localdb)
+        npm_auth_manager = NpmAuthManager(azure_client_factory, self.user_io, self.cache.localdb)
 
         # Handle remote connections
         self.remote_manager = RemoteManager(self.cache, auth_manager, self.out, self.hook_manager)

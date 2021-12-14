@@ -1,49 +1,22 @@
-from azure.devops.connection import Connection
-from msrest.authentication import BasicAuthentication
-from conans.errors import AuthenticationException, ConanException, ForbiddenException
 
 
 class NpmAuthManager(object):
 
-    def __init__(self, user_io, localdb):
+    def __init__(self, azure_client_factory, user_io, localdb):
+        self._azure_client_factory = azure_client_factory
         self._user_io = user_io
         self._localdb = localdb
-        self._connection = None
 
     def call_rest_api_method(self, remote, method_name, *args, **kwargs):
-        """Handles AuthenticationException and request user to input a user and a password"""
-        user, token, refresh_token = self._localdb.get_login(remote.url)
+        """
+        Handles AuthenticationException and request user to input a user and a password
+        """
+        azure_client = self._get_azure_client(remote)
+        ret = getattr(azure_client, method_name)(*args, **kwargs)
+        return ret
 
-        if method_name == "authenticate":
-            return self._authenticate(remote, None, args[1])
-
-    def _authenticate(self, remote, user, password):
-        # Extract data from given url
-        remote_url = remote.url
-        remote_url_parts = remote_url.split('/')
-        if len(remote_url_parts) < 6:
-            ConanException("Cannot parse Organization or Package from given url")
-        elif remote_url_parts[2].find('dev.azure.com') == -1:
-            ConanException("Cannot handle platform not equal to dev.azure.com")
-        elif remote_url_parts[6] != 'npm':
-            ConanException("Cannot handle packages with given type not equal to npm")
-
-        organization = remote_url_parts[3]
-        organization_url_len = remote_url.find(organization) + len(organization)
-        organization_url = remote_url[:organization_url_len]
-
-        # Create a connection to the org
-        credentials = BasicAuthentication('', password)
-        connection = Connection(base_url=organization_url, creds=credentials)
-
-        # Authenticate the connection
-        try:
-            connection.authenticate()
-        except Exception as ex:
-            raise AuthenticationException(ex)
-
-        self._connection = connection
-        return remote.name, user, user
+    def _get_azure_client(self, remote):
+        return self._azure_client_factory.new(remote, self._localdb, 1)
 
 
 # if __name__ == "__main__":
