@@ -10,7 +10,7 @@ class NpmAuthManager(object):
 
     def call_rest_api_method(self, remote, method_name, *args, **kwargs):
         """Handles AuthenticationException and request user to input a user and a password"""
-        user, token, refresh_token = self._localdb.get_login(remote.url)
+        user = self._localdb.get_username(remote.url)
         npm_client = self._get_npm_client(remote)
 
         try:
