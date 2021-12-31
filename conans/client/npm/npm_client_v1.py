@@ -12,10 +12,14 @@ from azure.devops.connection import Connection
 from msrest.authentication import BasicAuthentication
 
 from conans.client.cmd.user import update_localdb
+from conans.client.remote_manager import check_compressed_files
 from conans.errors import AuthenticationException, ConanException, \
     NoRestV2Available, NotFoundException
+from conans.model.info import ConanInfo
 from conans.model.manifest import FileTreeManifest
-from conans.paths import CONAN_MANIFEST
+from conans.model.version import Version
+from conans.paths import CONAN_MANIFEST, EXPORT_SOURCES_TGZ_NAME, EXPORT_TGZ_NAME, PACKAGE_TGZ_NAME, \
+    CONANINFO
 from conans.tools import untargz
 from conans.util.files import decode_text, md5sum
 
@@ -44,8 +48,9 @@ class NpmClientV1Methods(object):
         return files
 
     def _download_package_npm(self, pref):
-        npm_name = pref.name + '-' + pref.revision
-        files = self._download_npm(npm_name, pref.version)
+        npm_ref = pref.ref
+        npm_name = npm_ref.name + '-' + pref.id
+        files = self._download_npm(npm_name, npm_ref.version)
         return files
 
     def _download_npm(self, npm_name, npm_version):
@@ -65,25 +70,22 @@ class NpmClientV1Methods(object):
             if not feed_packages:
                 raise NotFoundException(("No packages found matching pattern '%s'" % npm_name))
 
-            # Convert to valid npm version
-            npm_version_token = npm_version.split(".")
-            if len(npm_version_token) > 3:
-                last_token = npm_version_token.pop()
-                npm_version = ".".join(npm_version_token) + "-" + last_token
-
             # Find correct version
             npm_package = None
-            npm_package_version_found = False
+            npm_package_version = None
+            npm_package_conan_version = Version(npm_version)
             for feed_package in feed_packages:
                 for feed_package_version in feed_package.versions:
-                    if feed_package_version.normalized_version == npm_version:
+                    feed_package_version_str = feed_package_version.normalized_version.replace("-", ".")
+                    feed_package_conan_version = Version(feed_package_version_str)
+                    if npm_package_conan_version.compatible(feed_package_conan_version):
                         npm_package = feed_package
-                        npm_package_version_found = True
+                        npm_package_version = feed_package_version.normalized_version
                         break
-                if npm_package and npm_package_version_found:
+                if npm_package and npm_package_version:
                     break
 
-            if not npm_package_version_found:
+            if not npm_package_version:
                 raise NotFoundException(("No packages found matching version '%s'" % npm_version))
 
             # Download package
@@ -91,8 +93,11 @@ class NpmClientV1Methods(object):
             npm_download_generator = npm_client.get_content_unscoped_package(
                 feed_id,
                 npm_package.name,
-                npm_version
+                npm_package_version
             )
+
+            if self._output and not self._output.is_terminal:
+                self._output.writeln("Downloading npm package '%s/%s'..." % (npm_package.name, npm_package_version))
 
             os.makedirs(npm_package_path, exist_ok=True)
             with open(npm_package_file, 'wb') as file:
@@ -105,70 +110,131 @@ class NpmClientV1Methods(object):
             untargz(npm_package_file, npm_package_path)
 
         # Get all files from cache
-        files = [fn for fn in glob.glob(npm_package_content_path + os.path.sep + "**", recursive=True)
-                 if not os.path.basename(fn).startswith('package.json') and os.path.isfile(fn)]
+        found_files = [fn for fn in glob.glob(npm_package_content_path + os.path.sep + "**", recursive=True)
+                       if not os.path.basename(fn).startswith('package.json') and os.path.isfile(fn)]
+
+        # Convert to dict
+        files = {}
+        for found_file in found_files:
+            files[os.path.basename(found_file)] = found_file
 
         return files
 
     def _get_file_contents(self, files, filters):
         contents = {}
-        for file in files:
-            if os.path.basename(file) in filters:
-                with open(file, 'rb') as handle:
+        for filename, filepath in files.items():
+            if filename in filters:
+                with open(filepath, 'rb') as handle:
                     file_content = handle.read()
-                contents[os.path.basename(file)] = file_content
+                contents[filename] = file_content
 
         return contents
 
+    def _copy_files_to_folder(self, src_files, dest_folder):
+        copied_files = {}
+        for src_filename, src_filepath in src_files.items():
+            # Copy file to dest_folder
+            dest_filepath = os.path.join(dest_folder, src_filename)
+            os.makedirs(os.path.dirname(dest_filepath), exist_ok=True)
+            shutil.copyfile(src_filepath, dest_filepath)
+
+            # Add copied file to dict
+            copied_files[src_filename] = dest_filepath
+
+        return copied_files
+
     def get_recipe_manifest(self, ref):
-        # Get the digest
-        files = self._download_recipe_npm(ref)
-        contents = self._get_file_contents(files, [CONAN_MANIFEST])
+        """Gets a FileTreeManifest from conans"""
+        # Obtain the files from npm package
+        npm_package_files = self._download_recipe_npm(ref)
+        contents = self._get_file_contents(npm_package_files, [CONAN_MANIFEST])
 
         # Unroll generator and decode (plain text)
         contents = {key: decode_text(value) for key, value in contents.items()}
         return FileTreeManifest.loads(contents[CONAN_MANIFEST])
 
     def get_package_manifest(self, pref):
-        files = self._download_package_npm(pref)
-        raise NotFoundException('Not implemented, yet')
+        """Gets a FileTreeManifest from a package"""
+        pref = pref.copy_with_revs(None, None)
+        # Obtain the files from npm package
+        npm_package_files = self._download_package_npm(pref)
+        contents = self._get_file_contents(npm_package_files, [CONAN_MANIFEST])
+
+        # Unroll generator and decode (plain text)
+        contents = {key: decode_text(value) for key, value in contents.items()}
+        return FileTreeManifest.loads(contents[CONAN_MANIFEST])
 
     def get_package_info(self, pref, headers):
-        raise RuntimeError('Not implemented, yet')
+        """Gets a ConanInfo file from a package"""
+        pref = pref.copy_with_revs(None, None)
+        # Obtain the files from npm package
+        npm_package_files = self._download_package_npm(pref)
+
+        if CONANINFO not in npm_package_files:
+            raise NotFoundException("Package %s doesn't have the %s file!" % (pref, CONANINFO))
+
+        # Get the info (in memory)
+        contents = self._get_file_contents(npm_package_files, [CONANINFO])
+
+        # Unroll generator and decode (plain text)
+        contents = {key: decode_text(value) for key, value in dict(contents).items()}
+        return ConanInfo.loads(contents[CONANINFO])
 
     def get_recipe(self, ref, dest_folder):
+        npm_package_files = self._download_recipe_npm(ref)
+        npm_package_files.pop(EXPORT_SOURCES_TGZ_NAME, None)
+        check_compressed_files(EXPORT_TGZ_NAME, npm_package_files)
 
-        raise RuntimeError('Not implemented, yet')
+        # Copy files from cache to dest_folder
+        recipe_files = self._copy_files_to_folder(npm_package_files, dest_folder)
+        return recipe_files
 
     def get_recipe_snapshot(self, ref):
         try:
             # Get the digest and calculate md5 of package files
-            files = self._download_recipe_npm(ref)
+            npm_package_files = self._download_recipe_npm(ref)
             snapshot = {}
-            for file in files:
-                snapshot[os.path.basename(file)] = md5sum(file)
+            for src_filename, src_filepath in npm_package_files.items():
+                snapshot[src_filename] = md5sum(src_filepath)
         except NotFoundException:
             snapshot = []
         return snapshot
 
     def get_recipe_sources(self, ref, dest_folder):
+        npm_package_files = self._download_recipe_npm(ref)
+        check_compressed_files(EXPORT_SOURCES_TGZ_NAME, npm_package_files)
+        if EXPORT_SOURCES_TGZ_NAME not in npm_package_files:
+            return None
 
-        raise RuntimeError('Not implemented, yet')
+        npm_package_files = {EXPORT_SOURCES_TGZ_NAME: npm_package_files[EXPORT_SOURCES_TGZ_NAME]}
+
+        # Copy files from cache to dest_folder
+        recipe_sources_files = self._copy_files_to_folder(npm_package_files, dest_folder)
+        return recipe_sources_files
 
     def get_package(self, pref, dest_folder):
+        npm_package_files = self._download_package_npm(pref)
+        check_compressed_files(PACKAGE_TGZ_NAME, npm_package_files)
 
-        raise RuntimeError('Not implemented, yet')
+        # Copy files from cache to dest_folder
+        package_files = self._copy_files_to_folder(npm_package_files, dest_folder)
+        return package_files
 
-    def get_package_snapshot(self, ref):
-
-        raise RuntimeError('Not implemented, yet')
+    def get_package_snapshot(self, pref):
+        try:
+            # Get the digest and calculate md5 of package files
+            npm_package_files = self._download_package_npm(pref)
+            snapshot = {}
+            for src_filename, src_filepath in npm_package_files.items():
+                snapshot[src_filename] = md5sum(src_filepath)
+        except NotFoundException:
+            snapshot = []
+        return snapshot
 
     def get_recipe_path(self, ref, path):
-        self.check_credentials()
         raise RuntimeError('Not implemented, yet')
 
     def get_package_path(self, pref, path):
-        self.check_credentials()
         raise RuntimeError('Not implemented, yet')
 
     def upload_recipe(self, ref, files_to_upload, deleted, retry, retry_wait):
@@ -176,8 +242,9 @@ class NpmClientV1Methods(object):
         self._upload_as_npm(npm_name, ref.version, ref.revision, files_to_upload, deleted, retry, retry_wait)
 
     def upload_package(self, pref, files_to_upload, deleted, retry, retry_wait):
-
-        raise RuntimeError('Not implemented, yet')
+        npm_ref = pref.ref
+        npm_name = npm_ref.name + '-' + pref.id
+        self._upload_as_npm(npm_name, npm_ref.version, pref.revision, files_to_upload, deleted, retry, retry_wait)
 
     def _upload_as_npm(self, npm_name, npm_version, revision, files_to_upload, deleted, retry, retry_wait):
         self.check_credentials()
