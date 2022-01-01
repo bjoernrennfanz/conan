@@ -44,16 +44,24 @@ class NpmClientV1Methods(object):
 
     def _download_recipe_npm(self, ref):
         npm_name = ref.name + '-recipe'
-        files = self._download_npm(npm_name, ref.version)
+
+        files = self._download_npm(npm_name, ref.version, ref.revision)
         return files
 
     def _download_package_npm(self, pref):
         npm_ref = pref.ref
         npm_name = npm_ref.name + '-' + pref.id
-        files = self._download_npm(npm_name, npm_ref.version)
+
+        files = self._download_npm(npm_name, npm_ref.version, npm_ref.revision)
         return files
 
-    def _download_npm(self, npm_name, npm_version):
+    def _download_npm(self, npm_name, version, revision):
+        """ Downloads the npm package from azure feed """
+        # Get npm package version
+        revision = revision if revision else "0"
+        npm_version = self._get_npm_version(version, revision)
+
+        # Build npm cache path
         npm_package_path = os.path.join(self._npm_cache, 'packages', npm_name, npm_version)
         npm_package_file = os.path.join(npm_package_path, npm_name + '.tgz')
 
@@ -73,12 +81,15 @@ class NpmClientV1Methods(object):
             # Find correct version
             npm_package = None
             npm_package_version = None
-            npm_package_conan_version = Version(npm_version)
             for feed_package in feed_packages:
                 for feed_package_version in feed_package.versions:
-                    feed_package_version_str = feed_package_version.normalized_version.replace("-", ".")
-                    feed_package_conan_version = Version(feed_package_version_str)
-                    if npm_package_conan_version.compatible(feed_package_conan_version):
+                    # Check of versions matches
+                    if feed_package_version.normalized_version == npm_version:
+                        npm_package = feed_package
+                        npm_package_version = feed_package_version.normalized_version
+                        break
+                    # Alternative fall back to latest version
+                    if feed_package_version.is_latest and revision == "0":
                         npm_package = feed_package
                         npm_package_version = feed_package_version.normalized_version
                         break
@@ -88,21 +99,27 @@ class NpmClientV1Methods(object):
             if not npm_package_version:
                 raise NotFoundException(("No packages found matching version '%s'" % npm_version))
 
-            # Download package
-            npm_client = self._connection.clients_v6_0.get_npm_client()
-            npm_download_generator = npm_client.get_content_unscoped_package(
-                feed_id,
-                npm_package.name,
-                npm_package_version
-            )
+            # Update paths and file names
+            npm_package_path = os.path.join(self._npm_cache, 'packages', npm_package.name, npm_package_version)
+            npm_package_file = os.path.join(npm_package_path, npm_package.name + '.tgz')
 
-            if self._output and not self._output.is_terminal:
-                self._output.writeln("Downloading npm package '%s/%s'..." % (npm_package.name, npm_package_version))
+            # Check again file exists
+            if not os.path.isfile(npm_package_file):
+                # Download package
+                npm_client = self._connection.clients_v6_0.get_npm_client()
+                npm_download_generator = npm_client.get_content_unscoped_package(
+                    feed_id,
+                    npm_package.name,
+                    npm_package_version
+                )
 
-            os.makedirs(npm_package_path, exist_ok=True)
-            with open(npm_package_file, 'wb') as file:
-                for chunk in npm_download_generator:
-                    file.write(chunk)
+                if self._output and not self._output.is_terminal:
+                    self._output.writeln("Downloading npm package '%s/%s'..." % (npm_package.name, npm_package_version))
+
+                os.makedirs(npm_package_path, exist_ok=True)
+                with open(npm_package_file, 'wb') as file:
+                    for chunk in npm_download_generator:
+                        file.write(chunk)
 
         # Extract downloaded file
         npm_package_content_path = os.path.join(npm_package_path, "package")
@@ -244,17 +261,14 @@ class NpmClientV1Methods(object):
     def upload_package(self, pref, files_to_upload, deleted, retry, retry_wait):
         npm_ref = pref.ref
         npm_name = npm_ref.name + '-' + pref.id
-        self._upload_as_npm(npm_name, npm_ref.version, pref.revision, files_to_upload, deleted, retry, retry_wait)
+        self._upload_as_npm(npm_name, npm_ref.version, npm_ref.revision, files_to_upload, deleted, retry, retry_wait)
 
-    def _upload_as_npm(self, npm_name, npm_version, revision, files_to_upload, deleted, retry, retry_wait):
+    def _upload_as_npm(self, npm_name, version, revision, files_to_upload, deleted, retry, retry_wait):
         self.check_credentials()
         user, token, refresh_token = self._local_db.get_login(self._remote.url)
 
-        # Convert to valid npm version
-        npm_version_token = npm_version.split(".")
-        if len(npm_version_token) > 3:
-            last_token = npm_version_token.pop()
-            npm_version = ".".join(npm_version_token) + "-" + last_token
+        # Get npm package version
+        npm_version = self._get_npm_version(version, revision)
 
         with tempfile.TemporaryDirectory() as tmp_dir_name:
             remote_url = self._remote.url
@@ -281,7 +295,6 @@ class NpmClientV1Methods(object):
                 "name": npm_name,
                 "description": npm_name + " package created by conan.io",
                 "version": npm_version,
-                "keywords": [revision],
             }
 
             package_json = os.path.join(tmp_dir_name, 'package.json')
@@ -295,6 +308,24 @@ class NpmClientV1Methods(object):
 
             # Run NPM publish
             subprocess.run("npm publish", shell=True, cwd=tmp_dir_name)
+
+    def _get_npm_version(self, version, revision):
+        # Convert to valid npm version
+        npm_version_build_number = None
+        npm_version_tokens = version.split(".")
+        if len(npm_version_tokens) > 3:
+            npm_version_build_number = npm_version_tokens.pop()
+        # Build npm version
+        npm_version = ".".join(npm_version_tokens)
+        if revision and revision != "0":
+            npm_version += "-" + revision
+            if npm_version_build_number:
+                npm_version += "." + npm_version_build_number
+        else:
+            if npm_version_build_number:
+                npm_version += "-" + npm_version_build_number
+
+        return npm_version
 
     def _get_organization_url_and_feed(self, remote):
         # Extract data from given url
