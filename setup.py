@@ -74,7 +74,7 @@ setup(
 
     # See https://pypi.python.org/pypi?%3Aaction=list_classifiers
     classifiers=[
-        'Development Status :: 5 - Production/Stable',
+        'Development Status :: 3 - Alpha',
         'Intended Audience :: Developers',
         'Topic :: Software Development :: Build Tools',
         'License :: OSI Approved :: MIT License',
@@ -86,7 +86,7 @@ setup(
 
     # What does your project relate to?
     keywords=['C/C++', 'package', 'libraries', 'developer', 'manager',
-              'dependency', 'tool', 'c', 'c++', 'cpp'],
+              'dependency', 'tool', 'c', 'c++', 'cpp', 'azure', 'devops'],
 
     # You can just specify the packages manually here if your project is
     # simple. Or you can use find_packages().

@@ -13,7 +13,7 @@ class BasicClientTest(unittest.TestCase):
         self.assertIn('Conan commands. Type "conan <command> -h" for help', client.out)
 
         client.run("--version")
-        self.assertIn("Conan version %s" % __version__, client.out)
+        self.assertIn("Conan (conan-azure-devops fork) version %s" % __version__, client.out)
 
         client.run("some_unknown_command123", assert_error=True)
         self.assertIn("ERROR: Unknown command 'some_unknown_command123'", client.out)

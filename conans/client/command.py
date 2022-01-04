@@ -2218,7 +2218,7 @@ class Command(object):
                 method = commands[command]
             except KeyError as exc:
                 if command in ["-v", "--version"]:
-                    self._out.success("Conan version %s" % client_version)
+                    self._out.success("Conan (conan-azure-devops fork) version %s" % client_version)
                     return False
 
                 self._warn_python_version()

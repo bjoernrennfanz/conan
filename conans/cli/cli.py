@@ -114,7 +114,7 @@ class Cli(object):
             command = self.commands[command_argument]
         except KeyError as exc:
             if command_argument in ["-v", "--version"]:
-                self._out.info("Conan version %s" % client_version)
+                self._out.info("Conan (conan-azure-devops fork) version %s" % client_version)
                 return SUCCESS
 
             if command_argument in ["-h", "--help"]:
