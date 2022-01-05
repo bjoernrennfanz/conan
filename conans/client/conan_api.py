@@ -7,6 +7,7 @@ from collections import namedtuple
 from six import StringIO
 
 import conans
+from conans import __default_remote_type__ as default_remote_type
 from conans import __version__ as client_version
 from conans.client.cache.cache import ClientCache
 from conans.client.cmd.build import cmd_build
@@ -38,6 +39,9 @@ from conans.client.manager import deps_install
 from conans.client.migrations import ClientMigrator
 from conans.client.output import ConanOutput, colorama_initialize
 from conans.client.profile_loader import profile_from_args, read_profile
+from conans.client.npm import __npm_remote_type__ as npm_remote_type
+from conans.client.npm.auth_manager import NpmAuthManager
+from conans.client.npm.npm_client import NpmClientFactory
 from conans.client.recorder.action_recorder import ActionRecorder
 from conans.client.recorder.search_recorder import SearchRecorder
 from conans.client.recorder.upload_recoder import UploadRecorder
@@ -184,8 +188,14 @@ class ConanApp(object):
                                                    artifacts_properties=artifacts_properties)
         # Wraps RestApiClient to add authentication support (same interface)
         auth_manager = ConanApiAuthManager(rest_client_factory, self.user_io, self.cache.localdb)
+
+        # Setup npm client
+        npm_client_factory = NpmClientFactory(self.out, self.config, artifacts_properties=artifacts_properties)
+        npm_auth_manager = NpmAuthManager(npm_client_factory, self.user_io, self.cache.localdb)
+
         # Handle remote connections
         self.remote_manager = RemoteManager(self.cache, auth_manager, self.out, self.hook_manager)
+        self.remote_manager.register_auth_manager(npm_auth_manager, npm_remote_type)
 
         # Adjust global tool variables
         set_global_instances(self.out, self.requester, self.config)
@@ -1013,8 +1023,8 @@ class ConanAPIV1(object):
         return list(self.app.cache.registry.load_remotes().all_values())
 
     @api_method
-    def remote_add(self, remote_name, url, verify_ssl=True, insert=None, force=None):
-        return self.app.cache.registry.add(remote_name, url, verify_ssl, insert, force)
+    def remote_add(self, remote_name, url, remote_type=default_remote_type, verify_ssl=True, insert=None, force=None):
+        return self.app.cache.registry.add(remote_name, url, remote_type, verify_ssl, insert, force)
 
     @api_method
     def remote_remove(self, remote_name):
@@ -1025,8 +1035,8 @@ class ConanAPIV1(object):
         return self.app.cache.registry.set_disabled_state(remote_name, state)
 
     @api_method
-    def remote_update(self, remote_name, url, verify_ssl=True, insert=None):
-        return self.app.cache.registry.update(remote_name, url, verify_ssl, insert)
+    def remote_update(self, remote_name, url, remote_type=default_remote_type, verify_ssl=True, insert=None):
+        return self.app.cache.registry.update(remote_name, url, remote_type, verify_ssl, insert)
 
     @api_method
     def remote_rename(self, remote_name, new_new_remote):

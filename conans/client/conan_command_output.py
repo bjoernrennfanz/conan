@@ -2,6 +2,7 @@ import json
 import os
 from collections import OrderedDict
 
+from conans.client.npm import __npm_remote_type__ as npm_remote_type
 from conans.client.graph.graph import RECIPE_CONSUMER, RECIPE_VIRTUAL
 from conans.client.graph.graph import RECIPE_EDITABLE
 from conans.client.graph.grapher import Grapher
@@ -33,14 +34,16 @@ class CommandOutputer(object):
         for r in remotes:
             if raw:
                 disabled_str = " True" if r.disabled else ""
+                type_str = " npm" if npm_remote_type in r.type else ""
                 self._output.info(
-                    "%s %s %s %s" %
-                    (r.name, r.url, r.verify_ssl, disabled_str))
+                    "%s %s%s %s%s" %
+                    (r.name, r.url, type_str, r.verify_ssl, disabled_str))
             else:
                 disabled_str = ", Disabled: True" if r.disabled else ""
+                type_str = "Type: npm, " if npm_remote_type in r.type else ""
                 self._output.info(
-                    "%s: %s [Verify SSL: %s%s]" %
-                    (r.name, r.url, r.verify_ssl, disabled_str))
+                    "%s: %s [%sVerify SSL: %s%s]" %
+                    (r.name, r.url, type_str, r.verify_ssl, disabled_str))
 
     def remote_ref_list(self, refs):
         for reference, remote_name in refs.items():

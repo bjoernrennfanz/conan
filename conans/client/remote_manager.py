@@ -6,6 +6,7 @@ import traceback
 from requests.exceptions import ConnectionError
 
 from conans import DEFAULT_REVISION_V1
+from conans import __default_remote_type__ as default_remote_type
 from conans.client.cache.remote_registry import Remote
 from conans.errors import ConanConnectionError, ConanException, NotFoundException, \
     NoRestV2Available, PackageNotFoundException
@@ -48,8 +49,11 @@ class RemoteManager(object):
     def __init__(self, cache, auth_manager, output, hook_manager):
         self._cache = cache
         self._output = output
-        self._auth_manager = auth_manager
+        self._auth_managers = {default_remote_type: auth_manager}
         self._hook_manager = hook_manager
+
+    def register_auth_manager(self, auth_manager, remote_type):
+        self._auth_managers[remote_type] = auth_manager
 
     def check_credentials(self, remote):
         self._call_remote(remote, "check_credentials")
@@ -277,10 +281,12 @@ class RemoteManager(object):
 
     def _call_remote(self, remote, method, *args, **kwargs):
         assert (isinstance(remote, Remote))
+        if not (remote.type in self._auth_managers.keys()):
+            raise ConanException("No auth manager for Remote '%s' found" % remote.name)
         if remote.disabled:
             raise ConanException("Remote '%s' is disabled" % remote.name)
         try:
-            return self._auth_manager.call_rest_api_method(remote, method, *args, **kwargs)
+            return self._auth_managers[remote.type].call_rest_api_method(remote, method, *args, **kwargs)
         except ConnectionError as exc:
             raise ConanConnectionError(("%s\n\nUnable to connect to %s=%s\n" +
                                         "1. Make sure the remote is reachable or,\n" +
