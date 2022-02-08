@@ -2,13 +2,15 @@ import base64
 import glob
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
-from pathlib import Path
 from itertools import cycle
+from pathlib import Path
 
 from azure.devops.connection import Connection
+from conans.model.ref import ConanFileReference
 from msrest.authentication import BasicAuthentication
 
 from conans.client.cmd.user import update_localdb
@@ -17,7 +19,6 @@ from conans.errors import AuthenticationException, ConanException, \
     NoRestV2Available, NotFoundException
 from conans.model.info import ConanInfo
 from conans.model.manifest import FileTreeManifest
-from conans.model.version import Version
 from conans.paths import CONAN_MANIFEST, EXPORT_SOURCES_TGZ_NAME, EXPORT_TGZ_NAME, PACKAGE_TGZ_NAME, \
     CONANINFO
 from conans.tools import untargz
@@ -70,11 +71,19 @@ class NpmClientV1Methods(object):
             self.check_credentials()
             _, feed_id = self._get_organization_url_and_feed(self._remote)
 
-            # Get packages from feed
+            # Find correct feed_project
+            feed_project = None
             feed_client = self._connection.clients_v6_0.get_feed_client()
-            feed_packages = feed_client.get_packages(feed_id, package_name_query=npm_name)
+            feeds = feed_client.get_feeds()
+            for feed in feeds:
+                if feed.name == feed_id:
+                    feed_project = feed.project
+                    if feed_project:
+                        feed_project = feed.project.id
+                    break
 
             # Check for npm package hits
+            feed_packages = feed_client.get_packages(feed_id, project=feed_project, package_name_query=npm_name, include_all_versions=True)
             if not feed_packages:
                 raise NotFoundException(("No packages found matching pattern '%s'" % npm_name))
 
@@ -110,7 +119,8 @@ class NpmClientV1Methods(object):
                 npm_download_generator = npm_client.get_content_unscoped_package(
                     feed_id,
                     npm_package.name,
-                    npm_package_version
+                    npm_package_version,
+                    project=feed_project
                 )
 
                 if self._output and not self._output.is_terminal:
@@ -248,11 +258,42 @@ class NpmClientV1Methods(object):
             snapshot = []
         return snapshot
 
+    def _get_path(self, npm_package_files, path):
+        files = npm_package_files.keys()
+
+        def is_dir(the_path):
+            if the_path == ".":
+                return True
+            for _the_file in files:
+                if the_path == _the_file:
+                    return False
+                elif _the_file.startswith(the_path):
+                    return True
+            raise NotFoundException("The specified path doesn't exist")
+
+        if is_dir(path):
+            ret = []
+            for the_file in files:
+                if path == "." or the_file.startswith(path):
+                    tmp = the_file[len(path) - 1:].split("/", 1)[0]
+                    if tmp not in ret:
+                        ret.append(tmp)
+            return sorted(ret)
+        else:
+            contents = self._get_file_contents(npm_package_files, [path])
+            content = contents[path]
+
+            return decode_text(content)
+
     def get_recipe_path(self, ref, path):
-        raise RuntimeError('Not implemented, yet')
+        """Gets a file content or a directory list"""
+        npm_package_files = self._download_recipe_npm(ref)
+        return self._get_path(npm_package_files, path)
 
     def get_package_path(self, pref, path):
-        raise RuntimeError('Not implemented, yet')
+        """Gets a file content or a directory list"""
+        npm_package_files = self._download_package_npm(pref)
+        return self._get_path(npm_package_files, path)
 
     def upload_recipe(self, ref, files_to_upload, deleted, retry, retry_wait):
         npm_name = ref.name + '-recipe'
@@ -315,8 +356,18 @@ class NpmClientV1Methods(object):
         npm_version_tokens = version.split(".")
         if len(npm_version_tokens) > 3:
             npm_version_build_number = npm_version_tokens.pop()
+
         # Build npm version
         npm_version = ".".join(npm_version_tokens)
+
+        # Check version is semantic 2.0 compatible
+        match = re.match("^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)"
+                          "(?:-(?P<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)"
+                          "(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))"
+                          "?(?:\+(?P<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$", npm_version)
+        if not match:
+            npm_version = "1.0.0-conan-" + npm_version
+
         if revision and revision != "0":
             npm_version += "-" + revision
             if npm_version_build_number:
@@ -333,15 +384,26 @@ class NpmClientV1Methods(object):
         remote_url_parts = remote_url.split('/')
         if len(remote_url_parts) < 6:
             ConanException("Cannot parse Organization or Package from given url")
-        elif remote_url_parts[2].find('dev.azure.com') == -1:
+        if remote_url_parts[2].find('dev.azure.com') == -1:
             ConanException("Cannot handle platform not equal to dev.azure.com")
-        elif remote_url_parts[6] != 'npm':
+
+        # Find npm keyword in remote url
+        npm_pos = 0
+        npm_index = 0
+        for remote_url_part in remote_url_parts:
+            if 'npm' == remote_url_part:
+                npm_pos = npm_index
+                break
+            npm_index += 1
+
+        # Check npm keyword was found
+        if npm_pos == 0:
             ConanException("Cannot handle packages with given type not equal to npm")
 
         organization = remote_url_parts[3]
         organization_url_len = remote_url.find(organization) + len(organization)
 
-        return remote_url[:organization_url_len], remote_url_parts[5]
+        return remote_url[:organization_url_len], remote_url_parts[npm_pos - 1]
 
     def authenticate(self, user, password):
         if user is None:  # The user is already in DB, just need the password
@@ -377,6 +439,10 @@ class NpmClientV1Methods(object):
     def check_credentials(self):
         organization_url, _ = self._get_organization_url_and_feed(self._remote)
         user, token, refresh_token = self._local_db.get_login(self._remote.url)
+        if not user or not refresh_token:
+            raise AuthenticationException('Username or password not valid.')
+
+        # Decrypt password
         password = self._sxor(user, refresh_token)
 
         # Create a connection to the org
@@ -391,7 +457,53 @@ class NpmClientV1Methods(object):
 
     def search(self, pattern=None, ignorecase=True):
         self.check_credentials()
-        raise RuntimeError('Not implemented, yet')
+        _, feed_id = self._get_organization_url_and_feed(self._remote)
+
+        # Find correct feed_project
+        feed_project = None
+        feed_client = self._connection.clients_v6_0.get_feed_client()
+        feeds = feed_client.get_feeds()
+        for feed in feeds:
+            if feed.name == feed_id:
+                feed_project = feed.project
+                if feed_project:
+                    feed_project = feed.project.id
+                break
+
+        # Check for npm package hits
+        search_results = []
+        pattern, _ = self._split_pair(pattern, "/") or (pattern, None)
+        feed_packages = feed_client.get_packages(
+            feed_id, project=feed_project, package_name_query=pattern,
+            include_all_versions=True
+        )
+        for feed_package in feed_packages:
+            if '-recipe' in feed_package.normalized_name:
+                conan_package_name = feed_package.normalized_name.replace(
+                    '-recipe', ''
+                )
+
+                for feed_package_version in feed_package.versions:
+                    npm_package_version = feed_package_version.normalized_version
+
+                    # Remove non semantic version extension form npm version
+                    npm_package_version = npm_package_version.replace(
+                        '1.0.0-conan-', ''
+                    )
+
+                    version, revision_build = self._split_pair(npm_package_version, '-') \
+                        or (npm_package_version, None)
+                    revision, build = self._split_pair(revision_build, '.') \
+                        or (None, revision_build)
+
+                    conan_package = conan_package_name + '/' + version
+                    conan_package = conan_package + ('.' + build) if build else conan_package
+                    conan_package = conan_package + '@_/_'
+                    conan_package = conan_package + ('#' + revision) if revision else conan_package
+
+                    search_results.append(conan_package)
+
+        return [ConanFileReference.loads(reference) for reference in search_results]
 
     def search_packages(self, reference, query):
         self.check_credentials()
@@ -424,3 +536,15 @@ class NpmClientV1Methods(object):
         """ XOR two byte strings """
         zip_list = zip(s1, cycle(s2)) if len(s1) > len(s2) else zip(cycle(s1), s2)
         return ''.join(chr(ord(a) ^ ord(b)) for a, b in zip_list)
+
+    def _split_pair(self, pair, split_char):
+        if not pair or pair == split_char:
+            return None, None
+        if split_char not in pair:
+            return None
+
+        words = pair.split(split_char)
+        if len(words) != 2:
+            raise ConanException("The reference has too many '{}'".format(split_char))
+        else:
+            return words
