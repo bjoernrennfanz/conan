@@ -10,6 +10,7 @@ from difflib import get_close_matches
 from six.moves import input as user_input
 
 from conans import __version__ as client_version
+from conans import __forkversion__ as client_fork_version
 from conans import __default_remote_type__ as default_remote_type
 from conans.client.npm import __npm_remote_type__ as npm_remote_type
 from conans.client.cmd.frogarian import cmd_frogarian
@@ -2227,7 +2228,7 @@ class Command(object):
                 method = commands[command]
             except KeyError as exc:
                 if command in ["-v", "--version"]:
-                    self._out.success("Conan (conan-azure-devops fork) version %s" % client_version)
+                    self._out.success("conan-azure-devops (based on conan %s) version %s" % (client_fork_version, client_version))
                     return False
 
                 self._warn_python_version()

@@ -23,7 +23,7 @@ from conans.paths import CONAN_MANIFEST, EXPORT_SOURCES_TGZ_NAME, EXPORT_TGZ_NAM
     CONANINFO
 from conans.tools import untargz
 from conans.util.files import decode_text, md5sum
-
+from conans.util.log import logger
 
 class NpmClientV1Methods(object):
 
@@ -43,20 +43,20 @@ class NpmClientV1Methods(object):
         if not os.path.exists(self._npm_cache):
             os.mkdir(self._npm_cache)
 
-    def _download_recipe_npm(self, ref):
+    def _download_recipe_npm(self, ref, force_download=False):
         npm_name = ref.name + '-recipe'
 
-        files = self._download_npm(npm_name, ref.version, ref.revision)
+        files = self._download_npm(npm_name, ref.version, ref.revision, force_download)
         return files
 
-    def _download_package_npm(self, pref):
+    def _download_package_npm(self, pref, force_download=False):
         npm_ref = pref.ref
         npm_name = npm_ref.name + '-' + pref.id
 
-        files = self._download_npm(npm_name, npm_ref.version, npm_ref.revision)
+        files = self._download_npm(npm_name, npm_ref.version, npm_ref.revision, force_download)
         return files
 
-    def _download_npm(self, npm_name, version, revision):
+    def _download_npm(self, npm_name, version, revision, force_download=False):
         """ Downloads the npm package from azure feed """
         # Get npm package version
         revision = revision if revision else "0"
@@ -65,6 +65,13 @@ class NpmClientV1Methods(object):
         # Build npm cache path
         npm_package_path = os.path.join(self._npm_cache, 'packages', npm_name, npm_version)
         npm_package_file = os.path.join(npm_package_path, npm_name + '.tgz')
+
+        # Clean in case of force download
+        if os.path.isfile(npm_package_file) and force_download:
+            try:
+                shutil.rmtree(npm_package_path)
+            except OSError:
+                logger.warn("Unable to clean npm cache: %s" % npm_package_path)
 
         # Check if already downloaded
         if not os.path.isfile(npm_package_file):
@@ -208,7 +215,7 @@ class NpmClientV1Methods(object):
         return ConanInfo.loads(contents[CONANINFO])
 
     def get_recipe(self, ref, dest_folder):
-        npm_package_files = self._download_recipe_npm(ref)
+        npm_package_files = self._download_recipe_npm(ref, True)
         npm_package_files.pop(EXPORT_SOURCES_TGZ_NAME, None)
         check_compressed_files(EXPORT_TGZ_NAME, npm_package_files)
 
@@ -491,8 +498,15 @@ class NpmClientV1Methods(object):
                         '1.0.0-conan-', ''
                     )
 
-                    version, revision_build = self._split_pair(npm_package_version, '-') \
-                        or (npm_package_version, None)
+                    # Special handling for versions in format x.y.z-topic
+                    npm_package_version_tokens = npm_package_version.split("-")
+                    if len(npm_package_version_tokens) > 2:
+                        version = "-".join(npm_package_version_tokens[:-1])
+                        revision_build = npm_package_version_tokens[-1]
+                    else:
+                        version, revision_build = self._split_pair(npm_package_version, '-') \
+                            or (npm_package_version, None)
+
                     revision, build = self._split_pair(revision_build, '.') \
                         or (None, revision_build)
 

@@ -1,7 +1,7 @@
 import unittest
 import textwrap
 
-from conans import __version__
+from conans import __version__, __forkversion__
 from conans.test.utils.tools import TestClient
 
 
@@ -13,7 +13,7 @@ class BasicClientTest(unittest.TestCase):
         self.assertIn('Conan commands. Type "conan <command> -h" for help', client.out)
 
         client.run("--version")
-        self.assertIn("Conan (conan-azure-devops fork) version %s" % __version__, client.out)
+        self.assertIn("conan-azure-devops (based on conan %s) version %s" % (__forkversion__, __version__), client.out)
 
         client.run("some_unknown_command123", assert_error=True)
         self.assertIn("ERROR: Unknown command 'some_unknown_command123'", client.out)

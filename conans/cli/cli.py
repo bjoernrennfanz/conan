@@ -10,6 +10,7 @@ from inspect import getmembers
 from colorama import Style
 
 from conans import __version__ as client_version
+from conans import __forkversion__ as client_fork_version
 from conans.cli.command import ConanSubCommand
 from conans.cli.exit_codes import SUCCESS, ERROR_MIGRATION, ERROR_GENERAL, USER_CTRL_C, \
     ERROR_SIGTERM, USER_CTRL_BREAK, ERROR_INVALID_CONFIGURATION
@@ -114,7 +115,7 @@ class Cli(object):
             command = self.commands[command_argument]
         except KeyError as exc:
             if command_argument in ["-v", "--version"]:
-                self._out.info("Conan (conan-azure-devops fork) version %s" % client_version)
+                self._out.info("conan-azure-devops (based on conan %s) version %s" % (client_fork_version, client_version))
                 return SUCCESS
 
             if command_argument in ["-h", "--help"]:
