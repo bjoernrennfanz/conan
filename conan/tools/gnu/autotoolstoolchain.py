@@ -3,9 +3,9 @@ from conan.tools._compilers import architecture_flag, build_type_flags, cppstd_f
     build_type_link_flags
 from conan.tools.apple.apple import apple_min_version_flag, to_apple_arch, \
     apple_sdk_path
-from conan.tools.cross_building import cross_building, get_cross_building_settings
+from conan.tools.build.cross_building import cross_building, get_cross_building_settings
 from conan.tools.env import Environment
-from conan.tools.files import save_toolchain_args
+from conan.tools.files.files import save_toolchain_args
 from conan.tools.gnu.get_gnu_triplet import _get_gnu_triplet
 from conan.tools.microsoft import VCVars, is_msvc
 from conans.tools import args_to_string
@@ -19,7 +19,7 @@ class AutotoolsToolchain:
 
         self.configure_args = []
         self.make_args = []
-        self.default_configure_install_args = False
+        self.default_configure_install_args = True
 
         # TODO: compiler.runtime for Visual studio?
         # defines
@@ -79,7 +79,8 @@ class AutotoolsToolchain:
         if compiler in ['clang', 'apple-clang', 'gcc']:
             if libcxx == 'libstdc++':
                 return '_GLIBCXX_USE_CXX11_ABI=0'
-            elif libcxx == "libstdc++11" and self._conanfile.conf["tools.gnu:define_libcxx11_abi"]:
+            elif libcxx == "libstdc++11" and self._conanfile.conf.get("tools.gnu:define_libcxx11_abi",
+                                                                      check_type=bool):
                 return '_GLIBCXX_USE_CXX11_ABI=1'
 
     def _libcxx(self):
@@ -166,16 +167,22 @@ class AutotoolsToolchain:
         configure_args = []
         configure_args.extend(self.configure_args)
 
-        if self.default_configure_install_args:
+        if self.default_configure_install_args and self._conanfile.package_folder:
+            def _get_cpp_info_value(name):
+                # Why not taking cpp.build? because this variables are used by the "cmake install"
+                # that correspond to the package folder (even if the root is the build directory)
+                elements = getattr(self._conanfile.cpp.package, name)
+                return elements[0] if elements else None
+
             # If someone want arguments but not the defaults can pass them in args manually
             configure_args.extend(
-                    ["--prefix=%s" % self._conanfile.package_folder.replace("\\", "/"),
-                     "--bindir=${prefix}/bin",
-                     "--sbindir=${prefix}/bin",
-                     "--libdir=${prefix}/lib",
-                     "--includedir=${prefix}/include",
-                     "--oldincludedir=${prefix}/include",
-                     "--datarootdir=${prefix}/share"])
+                    ['--prefix=%s' % self._conanfile.package_folder.replace("\\", "/"),
+                     "--bindir=${prefix}/%s" % _get_cpp_info_value("bindirs"),
+                     "--sbindir=${prefix}/%s" % _get_cpp_info_value("bindirs"),
+                     "--libdir=${prefix}/%s" % _get_cpp_info_value("libdirs"),
+                     "--includedir=${prefix}/%s" % _get_cpp_info_value("includedirs"),
+                     "--oldincludedir=${prefix}/%s" % _get_cpp_info_value("includedirs"),
+                     "--datarootdir=${prefix}/%s" % _get_cpp_info_value("resdirs")])
         user_args_str = args_to_string(self.configure_args)
         for flag, var in (("host", self._host), ("build", self._build), ("target", self._target)):
             if var and flag not in user_args_str:
