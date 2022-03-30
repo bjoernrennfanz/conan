@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 from itertools import cycle
 from pathlib import Path
+from datetime import datetime, timezone
 
 from azure.devops.connection import Connection
 from conans.model.ref import ConanFileReference
@@ -96,20 +97,27 @@ class NpmClientV1Methods(object):
 
             # Find correct version
             npm_package = None
+            npm_package_found = False
             npm_package_version = None
+            npm_package_publish_date = datetime(2000, 1, 1, 12, tzinfo=timezone.utc)
+
             for feed_package in feed_packages:
                 for feed_package_version in feed_package.versions:
                     # Check of versions matches
                     if feed_package_version.normalized_version == npm_version:
+                        npm_package_found = True
                         npm_package = feed_package
                         npm_package_version = feed_package_version.normalized_version
                         break
-                    # Alternative fall back to latest version
-                    if feed_package_version.is_latest and revision == "0":
-                        npm_package = feed_package
-                        npm_package_version = feed_package_version.normalized_version
-                        break
-                if npm_package and npm_package_version:
+                    else:
+                        version, _, build = self._extract_version_components(feed_package_version.normalized_version)
+                        feed_npm_version = version + ('' if build is None else ('-' + build))
+                        if feed_npm_version == npm_version:
+                            if feed_package_version.publish_date > npm_package_publish_date:
+                                npm_package = feed_package
+                                npm_package_publish_date = feed_package_version.publish_date
+                                npm_package_version = feed_package_version.normalized_version
+                if npm_package_found:
                     break
 
             if not npm_package_version:
@@ -385,6 +393,19 @@ class NpmClientV1Methods(object):
 
         return npm_version
 
+    def _extract_version_components(self, npm_version):
+        # Special handling for versions in format x.y.z-topic
+        npm_package_version_tokens = npm_version.split("-")
+        if len(npm_package_version_tokens) > 2:
+            version = npm_package_version_tokens[0]
+            revision_build = "-".join(npm_package_version_tokens[1:])
+        else:
+            version, revision_build = self._split_pair(npm_version, '-') or (npm_version, None)
+
+        revision, build = self._split_pair(revision_build, '.') or (revision_build, None)
+
+        return version, revision, build
+
     def _get_organization_url_and_feed(self, remote):
         # Extract data from given url
         remote_url = remote.url
@@ -499,16 +520,7 @@ class NpmClientV1Methods(object):
                     )
 
                     # Special handling for versions in format x.y.z-topic
-                    npm_package_version_tokens = npm_package_version.split("-")
-                    if len(npm_package_version_tokens) > 2:
-                        version = "-".join(npm_package_version_tokens[:-1])
-                        revision_build = npm_package_version_tokens[-1]
-                    else:
-                        version, revision_build = self._split_pair(npm_package_version, '-') \
-                            or (npm_package_version, None)
-
-                    revision, build = self._split_pair(revision_build, '.') \
-                        or (None, revision_build)
+                    version, revision, build = self._extract_version_components(npm_package_version)
 
                     conan_package = conan_package_name + '/' + version
                     conan_package = conan_package + ('.' + build) if build else conan_package
