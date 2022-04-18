@@ -8,11 +8,23 @@ CONAN_VCVARS_FILE = "conanvcvars.bat"
 
 
 def msvc_version_to_vs_ide_version(version):
-    _visuals = {'190': '14',
+    _visuals = {'170': '11',
+                '180': '12',
+                '190': '14',
                 '191': '15',
                 '192': '16',
                 '193': '17'}
     return _visuals[str(version)]
+
+
+def msvc_version_to_toolset_version(version):
+    toolsets = {'170': 'v110',
+                '180': 'v120',
+                '190': 'v140',
+                '191': 'v141',
+                '192': 'v142',
+                "193": 'v143'}
+    return toolsets[str(version)]
 
 
 class VCVars:
@@ -77,9 +89,17 @@ def msvc_runtime_flag(conanfile):
     runtime = settings.get_safe("compiler.runtime")
     if compiler == "Visual Studio":
         return runtime
-    if compiler == "msvc" or compiler == "intel-cc":
+    if compiler == "clang" and runtime in ("MD", "MT", "MTd", "MDd"):
+        # TODO: Remove in 2.0
+        return runtime
+    if runtime is not None:
+        if runtime == "static":
+            runtime = "MT"
+        elif runtime == "dynamic":
+            runtime = "MD"
+        else:
+            raise ConanException("compiler.runtime should be 'static' or 'dynamic'")
         runtime_type = settings.get_safe("compiler.runtime_type")
-        runtime = "MT" if runtime == "static" else "MD"
         if runtime_type == "Debug":
             runtime = "{}d".format(runtime)
         return runtime

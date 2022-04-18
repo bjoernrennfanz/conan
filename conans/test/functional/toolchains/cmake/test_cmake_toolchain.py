@@ -4,6 +4,7 @@ import textwrap
 
 import pytest
 
+from conan.tools.cmake.presets import load_cmake_presets
 from conan.tools.files.files import load_toolchain_args
 from conans.model.ref import ConanFileReference
 from conans.test.assets.cmake import gen_cmakelists
@@ -64,8 +65,8 @@ def test_cmake_toolchain_custom_toolchain():
     client.save({"conanfile.py": conanfile})
     client.run("install .")
     assert not os.path.exists(os.path.join(client.current_folder, "conan_toolchain.cmake"))
-    build_content = load_toolchain_args(client.current_folder)
-    assert "mytoolchain.cmake" == build_content["cmake_toolchain_file"]
+    presets = load_cmake_presets(client.current_folder)
+    assert "mytoolchain.cmake" in presets["configurePresets"][0]["toolchainFile"]
 
 
 def test_cmake_toolchain_user_toolchain_from_dep():
@@ -227,4 +228,3 @@ def test_install_output_directories():
     layout_folder = "cmake-build-release" if platform.system() != "Windows" else "build"
     toolchain = client.load(os.path.join(b_folder, layout_folder, "conan", "conan_toolchain.cmake"))
     assert 'set(CMAKE_INSTALL_LIBDIR "mylibs")' in toolchain
-
