@@ -2,7 +2,7 @@ import os
 import platform
 
 from conan.tools.build import build_jobs
-from conan.tools.cmake.presets import load_cmake_presets
+from conan.tools.cmake.presets import load_cmake_presets, get_configure_preset
 from conan.tools.cmake.utils import is_multi_configuration
 from conan.tools.files import chdir, mkdir
 from conan.tools.files.files import load_toolchain_args
@@ -48,17 +48,18 @@ class CMake(object):
     are passed to the command line, plus the ``--config Release`` for builds in multi-config
     """
 
-    def __init__(self, conanfile, namespace=None):
+    def __init__(self, conanfile):
         _validate_recipe(conanfile)
 
         # Store a reference to useful data
         self._conanfile = conanfile
-        self._namespace = namespace
 
         cmake_presets = load_cmake_presets(conanfile.generators_folder)
-        self._generator = cmake_presets["configurePresets"][0]["generator"]
-        self._toolchain_file = cmake_presets["configurePresets"][0]["toolchainFile"]
-        self._cache_variables = cmake_presets["configurePresets"][0]["cacheVariables"]
+        configure_preset = get_configure_preset(cmake_presets,
+                                                conanfile.settings.get_safe("build_type"))
+        self._generator = configure_preset["generator"]
+        self._toolchain_file = configure_preset["toolchainFile"]
+        self._cache_variables = configure_preset["cacheVariables"]
 
         self._cmake_program = "cmake"  # Path to CMake should be handled by environment
 
