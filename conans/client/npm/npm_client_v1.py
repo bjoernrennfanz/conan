@@ -110,7 +110,9 @@ class NpmClientV1Methods(object):
                         npm_package_version = feed_package_version.normalized_version
                         break
                     else:
-                        version, _, build = self._extract_version_components(feed_package_version.normalized_version)
+                        version, _, build = self._extract_version_components(
+                            feed_package_version.normalized_version
+                        )
                         feed_npm_version = version + ('' if build is None else ('-' + build))
                         if feed_npm_version == npm_version:
                             if feed_package_version.publish_date > npm_package_publish_date:
@@ -394,6 +396,13 @@ class NpmClientV1Methods(object):
         return npm_version
 
     def _extract_version_components(self, npm_version):
+
+        # If conan version is not valid npm version we got some prefix that we need to cut here
+        npm_version_prefixed = False
+        if npm_version.startswith('1.0.0-conan-'):
+            npm_version = npm_version.replace('1.0.0-conan-', '')
+            npm_version_prefixed = True
+
         # Special handling for versions in format x.y.z-topic
         npm_package_version_tokens = npm_version.split("-")
         if len(npm_package_version_tokens) > 2:
@@ -403,6 +412,10 @@ class NpmClientV1Methods(object):
             version, revision_build = self._split_pair(npm_version, '-') or (npm_version, None)
 
         revision, build = self._split_pair(revision_build, '.') or (revision_build, None)
+
+        # If conan version is not valid npm version we need some prefix
+        if npm_version_prefixed:
+            version = '1.0.0-conan-{}'.format(version)
 
         return version, revision, build
 
@@ -514,7 +527,7 @@ class NpmClientV1Methods(object):
                 for feed_package_version in feed_package.versions:
                     npm_package_version = feed_package_version.normalized_version
 
-                    # Remove non semantic version extension form npm version
+                    # Remove non-semantic version extension form npm version
                     npm_package_version = npm_package_version.replace(
                         '1.0.0-conan-', ''
                     )
