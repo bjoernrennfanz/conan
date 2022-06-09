@@ -20,6 +20,6 @@ OAUTH_TOKEN = "oauth_token"
 SERVER_CAPABILITIES = [COMPLEX_SEARCH_CAPABILITY, REVISIONS]  # Server is always with revisions
 DEFAULT_REVISION_V1 = "0"
 
-__version__ = '1.48.2'
-__forkversion__ = '1.48.1'
+__version__ = '1.48.3'
+__forkversion__ = '1.48.2'
 __default_remote_type__ = 'conan'
