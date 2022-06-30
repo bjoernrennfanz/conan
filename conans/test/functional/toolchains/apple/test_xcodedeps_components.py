@@ -9,8 +9,6 @@ from conans.test.utils.tools import TestClient
 
 @pytest.mark.skipif(platform.system() != "Darwin", reason="Only for MacOS")
 @pytest.mark.tool_cmake
-@pytest.mark.tool_xcodebuild
-@pytest.mark.tool_xcodegen
 def test_xcodedeps_components():
     """
     tcp/1.0 is a lib without components
@@ -202,3 +200,27 @@ def test_xcodedeps_components():
     assert "tcp/1.0: Hello World Release!" in client.out
     assert "client/1.0: Hello World Release!" in client.out
     assert "chat/1.0: Hello World Release!" in client.out
+
+
+@pytest.mark.skipif(platform.system() != "Darwin", reason="Only for MacOS")
+@pytest.mark.tool_cmake
+def test_xcodedeps_test_require():
+    client = TestClient()
+    client.run("new gtest/1.0 -m cmake_lib")
+    # client.run("new cmake_lib -d name=app -d version=1.0")
+    client.run("create . -tf=None")
+
+    # Create library having build and test requires
+    conanfile = textwrap.dedent(r'''
+        from conan import ConanFile
+        class HelloLib(ConanFile):
+            settings = "os", "compiler", "build_type", "arch"
+            def build_requirements(self):
+                self.test_requires('gtest/1.0')
+        ''')
+    client.save({"conanfile.py": conanfile}, clean_first=True)
+    client.run("install . -g XcodeDeps")
+    assert os.path.isfile(os.path.join(client.current_folder, "conan_gtest.xcconfig"))
+    assert os.path.isfile(os.path.join(client.current_folder, "conan_gtest_gtest.xcconfig"))
+    assert os.path.isfile(os.path.join(client.current_folder, "conan_gtest_gtest_release_x86_64.xcconfig"))
+    assert '#include "conan_gtest.xcconfig"' in client.load("conandeps.xcconfig")
