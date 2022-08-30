@@ -6,11 +6,15 @@ import re
 import shutil
 import subprocess
 import tempfile
+from contextlib import contextmanager
 from itertools import cycle
 from pathlib import Path
 from datetime import datetime, timezone
 
 from azure.devops.connection import Connection
+from conans.util.locks import SimpleLock
+from threading import Lock
+
 from conans.model.ref import ConanFileReference
 from msrest.authentication import BasicAuthentication
 
@@ -25,8 +29,10 @@ from conans.paths import CONAN_MANIFEST, EXPORT_SOURCES_TGZ_NAME, EXPORT_TGZ_NAM
 from conans.tools import untargz
 from conans.util.files import decode_text, md5sum
 from conans.util.log import logger
+from conans.util.sha import sha256 as sha256_sum
 
 class NpmClientV1Methods(object):
+    _thread_locks = {}  # Needs to be shared among all instances
 
     def __init__(self, remote, local_db, output, config, artifacts_properties=None):
         # Set to instance
@@ -43,6 +49,19 @@ class NpmClientV1Methods(object):
         self._npm_cache = os.path.join(Path.home(), '.conan-npm')
         if not os.path.exists(self._npm_cache):
             os.mkdir(self._npm_cache)
+
+    @contextmanager
+    def _lock(self, lock_id):
+        lock = os.path.join(self._npm_cache, "locks", lock_id)
+        with SimpleLock(lock):
+            # Once the process has access, make sure multithread is locked too
+            # as SimpleLock doesn't work multithread
+            thread_lock = self._thread_locks.setdefault(lock, Lock())
+            thread_lock.acquire()
+            try:
+                yield
+            finally:
+                thread_lock.release()
 
     def _download_recipe_npm(self, ref, force_download=False):
         npm_name = ref.name + '-recipe'
@@ -131,22 +150,24 @@ class NpmClientV1Methods(object):
 
             # Check again file exists
             if not os.path.isfile(npm_package_file):
-                # Download package
-                npm_client = self._connection.clients_v6_0.get_npm_client()
-                npm_download_generator = npm_client.get_content_unscoped_package(
-                    feed_id,
-                    npm_package.name,
-                    npm_package_version,
-                    project=feed_project
-                )
+                npm_package_download_hash = sha256_sum(npm_package_file.encode())
+                with self._lock(npm_package_download_hash):
+                    # Download package
+                    npm_client = self._connection.clients_v6_0.get_npm_client()
+                    npm_download_generator = npm_client.get_content_unscoped_package(
+                        feed_id,
+                        npm_package.name,
+                        npm_package_version,
+                        project=feed_project
+                    )
 
-                if self._output and not self._output.is_terminal:
-                    self._output.writeln("Downloading npm package '%s/%s'..." % (npm_package.name, npm_package_version))
+                    if self._output and not self._output.is_terminal:
+                        self._output.writeln("Downloading npm package '%s/%s'..." % (npm_package.name, npm_package_version))
 
-                os.makedirs(npm_package_path, exist_ok=True)
-                with open(npm_package_file, 'wb') as file:
-                    for chunk in npm_download_generator:
-                        file.write(chunk)
+                    os.makedirs(npm_package_path, exist_ok=True)
+                    with open(npm_package_file, 'wb') as file:
+                        for chunk in npm_download_generator:
+                            file.write(chunk)
 
         # Extract downloaded file
         npm_package_content_path = os.path.join(npm_package_path, "package")
