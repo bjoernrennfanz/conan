@@ -466,7 +466,7 @@ def test_toolchain_cache_variables():
     client.save({"conanfile.py": conanfile})
     with mock.patch("platform.system", mock.MagicMock(return_value="Windows")):
         client.run("install . mylib/1.0@ -c tools.cmake.cmaketoolchain:generator='MinGW Makefiles' "
-                   "-c tools.gnu:make_program='MyMake'")
+                   "-c tools.gnu:make_program='MyMake' -c tools.build:skip_test=True")
     presets = json.loads(client.load("CMakePresets.json"))
     cache_variables = presets["configurePresets"][0]["cacheVariables"]
     assert cache_variables["foo"] == 'ON'
@@ -475,6 +475,7 @@ def test_toolchain_cache_variables():
     assert cache_variables["CMAKE_SH"] == "THIS VALUE HAS PRIORITY"
     assert cache_variables["CMAKE_POLICY_DEFAULT_CMP0091"] == "THIS VALUE HAS PRIORITY"
     assert cache_variables["CMAKE_MAKE_PROGRAM"] == "MyMake"
+    assert cache_variables["BUILD_TESTING"] == 'OFF'
 
 
 def test_android_c_library():
@@ -491,7 +492,16 @@ def test_android_c_library():
 
         """)
     client.save({"conanfile.py": conanfile})
-    client.run("create . foo/1.0@ -s os=Android -s os.api_level=23 -c tools.android:ndk_path=/foo")
+    # Settings
+    settings = "-s arch=x86_64 -s os=Android -s os.api_level=23 -c tools.android:ndk_path=/foo"
+    # Checking the Android variables created
+    # Issue: https://github.com/conan-io/conan/issues/11798
+    client.run("install . " + settings)
+    conan_toolchain = client.load(os.path.join(client.current_folder, "conan_toolchain.cmake"))
+    assert "set(ANDROID_PLATFORM android-23)" in conan_toolchain
+    assert "set(ANDROID_ABI x86_64)" in conan_toolchain
+    assert "include(/foo/build/cmake/android.toolchain.cmake)" in conan_toolchain
+    client.run("create . foo/1.0@ " + settings)
 
 
 def test_user_presets_version2():
