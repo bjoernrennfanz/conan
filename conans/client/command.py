@@ -1581,7 +1581,7 @@ class Command(object):
                                 default=default_remote_type, help='TYPE of the remote [conan, npm]'
                                 '. Default conan', metavar="type")
         parser_add.add_argument('verify_ssl', nargs="?", default="True",
-                                help='Verify SSL certificated. Default True')
+                                help='Verify SSL certificate. Defaulted to True')
         parser_add.add_argument("-i", "--insert", nargs="?", const=0, type=int, action=OnceArgument,
                                 help="insert remote at specific index")
         parser_add.add_argument("-f", "--force", default=False, action='store_true',
@@ -1595,7 +1595,7 @@ class Command(object):
         parser_upd.add_argument('type', nargs="?", choices=[default_remote_type, npm_remote_type], default=default_remote_type,
                                 help='TYPE of the remote. Default conan api', metavar="type")
         parser_upd.add_argument('verify_ssl', nargs="?", default="True",
-                                help='Verify SSL certificated. Default True')
+                                help='Verify SSL certificate. Defaulted to True')
         parser_upd.add_argument("-i", "--insert", nargs="?", const=0, type=int, action=OnceArgument,
                                 help="Insert remote at specific index")
         parser_rename = subparsers.add_parser('rename', help='Update the remote name')
