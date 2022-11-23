@@ -116,30 +116,20 @@ class NpmClientV1Methods(object):
 
             # Find correct version
             npm_package = None
-            npm_package_found = False
             npm_package_version = None
             npm_package_publish_date = datetime(2000, 1, 1, 12, tzinfo=timezone.utc)
 
             for feed_package in feed_packages:
                 for feed_package_version in feed_package.versions:
-                    # Check of versions matches
-                    if feed_package_version.normalized_version == npm_version:
-                        npm_package_found = True
-                        npm_package = feed_package
-                        npm_package_version = feed_package_version.normalized_version
-                        break
-                    else:
-                        version, _, build = self._extract_version_components(
-                            feed_package_version.normalized_version
-                        )
-                        feed_npm_version = version + ('' if build is None else ('-' + build))
-                        if feed_npm_version == npm_version:
-                            if feed_package_version.publish_date > npm_package_publish_date:
-                                npm_package = feed_package
-                                npm_package_publish_date = feed_package_version.publish_date
-                                npm_package_version = feed_package_version.normalized_version
-                if npm_package_found:
-                    break
+                    version, _, build = self._extract_version_components(
+                        feed_package_version.normalized_version
+                    )
+                    feed_npm_version = version + ('' if build is None else ('-' + build))
+                    if feed_npm_version == npm_version:
+                        if feed_package_version.publish_date > npm_package_publish_date:
+                            npm_package = feed_package
+                            npm_package_publish_date = feed_package_version.publish_date
+                            npm_package_version = feed_package_version.normalized_version
 
             if not npm_package_version:
                 raise NotFoundException(("No packages found matching version '%s'" % npm_version))
