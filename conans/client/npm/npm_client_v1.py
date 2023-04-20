@@ -100,7 +100,7 @@ class NpmClientV1Methods(object):
 
             # Find correct feed_project
             feed_project = None
-            feed_client = self._connection.clients_v6_0.get_feed_client()
+            feed_client = self._connection.clients_v7_1.get_feed_client()
             feeds = feed_client.get_feeds()
             for feed in feeds:
                 if feed.name == feed_id:
@@ -143,7 +143,7 @@ class NpmClientV1Methods(object):
                 npm_package_download_hash = sha256_sum(npm_package_file.encode())
                 with self._lock(npm_package_download_hash):
                     # Download package
-                    npm_client = self._connection.clients_v6_0.get_npm_client()
+                    npm_client = self._connection.clients_v7_1.get_npm_client()
                     npm_download_generator = npm_client.get_content_unscoped_package(
                         feed_id,
                         npm_package.name,
@@ -513,7 +513,7 @@ class NpmClientV1Methods(object):
 
         # Find correct feed_project
         feed_project = None
-        feed_client = self._connection.clients_v6_0.get_feed_client()
+        feed_client = self._connection.clients_v7_1.get_feed_client()
         feeds = feed_client.get_feeds()
         for feed in feeds:
             if feed.name == feed_id:
